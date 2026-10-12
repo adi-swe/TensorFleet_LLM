@@ -7,6 +7,59 @@ training from measured step durations. Distributed runs use PyTorch DDP with
 CPU/Gloo or CUDA/NCCL; Apple MPS uses one supervised GPU worker.
 The existing `tensorfleet_literature` evidence validator remains available.
 
+## Project structure
+
+Production code retains the standard `src/` layout; tests stay at repository root.
+
+```text
+src/tensorfleet/
+├── training/
+│   ├── ddp_executor.py
+│   ├── checkpoint.py
+│   ├── profiler.py
+│   └── data.py, device.py, group.py, model.py
+├── simulator/
+│   ├── engine.py
+│   ├── event_queue.py
+│   ├── compute_model.py
+│   ├── communication_model.py
+│   ├── checkpoint_model.py
+│   ├── calibration.py
+│   └── contention.py
+├── controller/
+│   ├── observations.py
+│   ├── policies.py
+│   ├── candidate_search.py
+│   ├── safety_validator.py
+│   ├── executor.py
+│   └── agent_runtime.py
+├── experiments/
+│   ├── runner.py
+│   ├── failure_scenarios.py
+│   └── evaluate.py
+└── cli.py, config.py, __main__.py
+tests/
+```
+
+`training` performs real work and records measurements; `controller` supervises
+workers and validates policy proposals; `simulator` composes event and cost models;
+`experiments` launches real campaigns and evaluates held-out observations.
+See [ADR-0002](docs/adr/0002-modular-package-boundaries.md) for ownership and migration.
+
+Python imports have moved from `tensorfleet.executor` to `tensorfleet.training`
+and from `tensorfleet.orchestration` to `tensorfleet.controller`:
+
+```python
+from tensorfleet.training.device import resolve_config
+from tensorfleet.controller.executor import run_training
+from tensorfleet.simulator.calibration import load_timing_profile, predict
+from tensorfleet.experiments.evaluate import validate_profile
+from tensorfleet.experiments.runner import run_validation_campaign
+```
+
+CLI commands and checkpoint/metrics schemas remain compatible. The old Python
+module paths are removed; no compatibility shims are installed.
+
 ## Quick start: macOS Apple Silicon
 
 Use native arm64 Python 3.10 or newer (3.12/3.13 recommended for this foundation)
@@ -81,7 +134,7 @@ Global batch size is `batch-size × world-size`, so automatic worker selection c
 change training semantics. Pin device and world size for controlled comparisons.
 Resume checkpoints with their original device, worker count and data settings.
 The Python `TrainingConfig()` default remains CPU/Gloo for reproducible existing
-experiments; use `tensorfleet.executor.device.resolve_config(device="auto", ...)`
+experiments; use `tensorfleet.training.device.resolve_config(device="auto", ...)`
 for capability-based selection in Python. The current supervisor and command-agent
 lifecycle are supported on macOS/Linux; Windows has not been validated.
 
@@ -115,6 +168,36 @@ costs unless `--cost-profile` is supplied. `--checkpoint-seconds` and
 service duration. The shared-capacity model is explicitly **uncalibrated**;
 injected delays model controlled stragglers rather than measured physical CPU
 contention. Longer projections cycle the profile and need separate validation.
+
+## Offline candidate search and cost models
+
+Rank explicit checkpoint intervals using a completed calibration run:
+
+```bash
+tensorfleet search-candidates --profile runs/accuracy/calibration \
+  --checkpoint-intervals 1 2 4 8 --fail-step 5
+```
+
+Results are labeled `simulated` and `applied: false`. Search is bounded to 128
+input candidates and cannot change live training. Checkpoint frequency trades
+write cost against work replayed after the specified failure.
+
+The default work profile includes DDP communication. `communication_model.py`
+prevents adding communication costs again. If separately measured isolated compute
+and communication samples are available, the Python API can compose them:
+
+```python
+from tensorfleet.simulator.engine import simulate
+
+# Illustrative assumed seconds; not measurements or a calibrated network model.
+projection = simulate([0.01], steps=10, communication_durations=[0.002],
+                      durations_include_communication=False)
+```
+
+`event_queue.py` provides stable chronological ordering; `compute_model.py` owns
+profile cycling and explicit slowdown/delay assumptions; `checkpoint_model.py`
+commits progress only after a modeled write finishes. The training profiler does
+not yet isolate pure compute and communication times.
 
 ## Stochastic recovery
 
@@ -192,6 +275,7 @@ analyzing observations. The simulator chooses the latest measurement for each st
 - [Architecture diagram and contracts](docs/architecture.md)
 - [Architecture decision records](docs/adr/README.md)
 - [ADR-0001: Platform-aware training architecture](docs/adr/0001-platform-aware-training-architecture.md)
+- [ADR-0002: Modular package boundaries](docs/adr/0002-modular-package-boundaries.md)
 
 Architecture documentation is reviewed after every implementation step under
 [repository guidance](AGENTS.md); reviews are recorded in the architecture maintenance log.
@@ -207,6 +291,13 @@ python -m pytest -q -m 'not integration'  # fast units
 python -m pytest -q -m integration        # real workers
 python -m ruff check src tests examples
 ```
+
+[CI](.github/workflows/tests.yml) runs the full suite on Linux with Python
+3.10/3.11/3.12 and macOS with Python 3.12. It also checks formatting and installs
+the built wheel to smoke-test both CLI entry points outside the source tree.
+Linux runners use CPU PyTorch wheels; GPU tests skip when their hardware is
+unavailable. NumPy is a runtime dependency for PyTorch's checkpoint-state object
+collectives. JUnit test reports are retained as workflow artifacts.
 
 ## Literature evidence registry
 

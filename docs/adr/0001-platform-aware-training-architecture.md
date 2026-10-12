@@ -7,6 +7,12 @@
   recovery, guarded agents, CUDA/NCCL and automatic Apple GPU support
 - **Related diagram:** [Current architecture](../architecture.md#component-boundaries)
 
+## Amendment: module organization (2026-10-12)
+
+Implementation links now use the reorganized training/controller/experiments
+packages. The accepted runtime decisions remain in force; module ownership and
+simulator decomposition are refined in [ADR-0002](0002-modular-package-boundaries.md).
+
 ## Context
 
 TensorFleet is a research foundation for simulation-guided orchestration of model
@@ -111,14 +117,14 @@ macOS and Linux; Windows has not been validated.
 
 ## Validation and implementation references
 
-- [Configuration](../../src/tensorfleet/config.py), [device selection](../../src/tensorfleet/executor/device.py)
-  and [worker group](../../src/tensorfleet/executor/group.py)
-- [Training executor](../../src/tensorfleet/executor/worker.py), [checkpointing](../../src/tensorfleet/executor/checkpoint.py)
-  and [stateful data](../../src/tensorfleet/executor/data.py)
-- [Supervisor](../../src/tensorfleet/orchestration/supervisor.py), [controller interfaces](../../src/tensorfleet/orchestration/interfaces.py)
-  and [agent guards](../../src/tensorfleet/orchestration/agents.py)
+- [Configuration](../../src/tensorfleet/config.py), [device selection](../../src/tensorfleet/training/device.py)
+  and [worker group](../../src/tensorfleet/training/group.py)
+- [Training executor](../../src/tensorfleet/training/ddp_executor.py), [checkpointing](../../src/tensorfleet/training/checkpoint.py)
+  and [stateful data](../../src/tensorfleet/training/data.py)
+- [Supervisor](../../src/tensorfleet/controller/executor.py), [controller interfaces](../../src/tensorfleet/controller/policies.py)
+  and [agent guards](../../src/tensorfleet/controller/safety_validator.py)
 - [Simulator](../../src/tensorfleet/simulator/engine.py), [capacity model](../../src/tensorfleet/simulator/contention.py)
-  and [held-out validation](../../src/tensorfleet/simulator/validation.py)
+  and [held-out validation](../../src/tensorfleet/experiments/evaluate.py)
 - [Phase 1 tests](../../tests/test_phase1.py), [extension tests](../../tests/test_extensions.py)
   and [platform tests](../../tests/test_platforms.py)
 

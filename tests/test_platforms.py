@@ -5,10 +5,10 @@ import pytest
 import torch
 import torch.distributed as dist
 
-from tensorfleet.executor.checkpoint import load_checkpoint
-from tensorfleet.executor.device import backend_name, resolve_config
-from tensorfleet.executor.group import WorkerGroup
-from tensorfleet.orchestration.supervisor import run_training
+from tensorfleet.controller.executor import run_training
+from tensorfleet.training.checkpoint import load_checkpoint
+from tensorfleet.training.device import backend_name, resolve_config
+from tensorfleet.training.group import WorkerGroup
 
 
 def capabilities(monkeypatch, *, cuda=False, count=0, mps=False, nccl=True):

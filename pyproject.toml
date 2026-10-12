@@ -7,7 +7,7 @@ name = "tensorfleet-llm"
 version = "0.1.0"
 description = "Simulation-guided distributed training orchestration"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.8,<3", "psutil>=5.9"]
+dependencies = ["torch>=2.8,<3", "numpy>=1.24,<3", "psutil>=5.9"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.9"]

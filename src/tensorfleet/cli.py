@@ -56,12 +56,17 @@ def main():
     campaign.add_argument("--repeats", type=int, default=3)
     campaign.add_argument("--delay-seconds", type=float, default=0.005)
     campaign.add_argument("--tolerance", type=float, default=0.25)
+    search = commands.add_parser("search-candidates")
+    search.add_argument("--profile", required=True)
+    search.add_argument("--checkpoint-intervals", type=int, nargs="+", required=True)
+    search.add_argument("--fail-step", type=int)
     args = vars(parser.parse_args())
     command = args.pop("command")
     if command == "train":
-        from tensorfleet.executor.device import resolve_config
-        from tensorfleet.orchestration.agents import CommandAgentRuntime, GuardedAgentController
-        from tensorfleet.orchestration.supervisor import run_training
+        from tensorfleet.controller.agent_runtime import CommandAgentRuntime
+        from tensorfleet.controller.executor import run_training
+        from tensorfleet.controller.policies import GuardedAgentController
+        from tensorfleet.training.device import resolve_config
 
         output = args.pop("output")
         agent_command = args.pop("agent_command")
@@ -73,9 +78,8 @@ def main():
         )
         result = run_training(resolve_config(**args), output, controller)
     elif command == "simulate":
-        from tensorfleet.simulator.engine import load_profile, simulate
-        from tensorfleet.simulator.profile import load_timing_profile
-        from tensorfleet.simulator.validation import predict
+        from tensorfleet.simulator.calibration import load_profile, load_timing_profile, predict
+        from tensorfleet.simulator.engine import simulate
 
         cost_profile = args.pop("cost_profile")
         directory = args.pop("profile")
@@ -100,18 +104,32 @@ def main():
             )
             result = simulate(load_profile(directory), **args).to_dict()
     elif command == "simulate-contention":
+        from tensorfleet.simulator.calibration import load_profile
         from tensorfleet.simulator.contention import simulate_shared_capacity
-        from tensorfleet.simulator.engine import load_profile
 
         result = simulate_shared_capacity(
             load_profile(args["profile"]), args["job_steps"], args["world_size"], args["slots"]
         )
+    elif command == "search-candidates":
+        from tensorfleet.controller.candidate_search import search_checkpoint_candidates
+        from tensorfleet.simulator.calibration import load_timing_profile
+
+        candidates = search_checkpoint_candidates(
+            load_timing_profile(args["profile"]),
+            args["checkpoint_intervals"],
+            fail_step=args["fail_step"],
+        )
+        result = {
+            "kind": "simulated",
+            "applied": False,
+            "candidates": [candidate.to_dict() for candidate in candidates],
+        }
     elif command == "validate-simulation":
-        from tensorfleet.simulator.validation import validate_profile
+        from tensorfleet.experiments.evaluate import validate_profile
 
         result = validate_profile(args["calibration"], args["holdout"], args["tolerance"])
     else:
-        from tensorfleet.simulator.validation import run_validation_campaign
+        from tensorfleet.experiments.runner import run_validation_campaign
 
         result = run_validation_campaign(**args)
     print(json.dumps(result, indent=2))

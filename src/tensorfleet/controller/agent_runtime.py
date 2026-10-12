@@ -1,4 +1,4 @@
-"""Guarded proposals from external agent commands; no shell or executable actions."""
+"""JSON command adapter for trusted external agent implementations."""
 
 import json
 import math
@@ -7,26 +7,6 @@ import signal
 import subprocess
 import tempfile
 from dataclasses import asdict
-
-from tensorfleet.orchestration.interfaces import Decision
-
-
-def guard_decision(proposal, observation):
-    if isinstance(proposal, Decision):
-        proposal = asdict(proposal)
-    if (
-        not isinstance(proposal, dict)
-        or set(proposal) != {"action", "reason"}
-        or proposal["action"] not in ("restart", "stop")
-        or not isinstance(proposal["reason"], str)
-        or not 1 <= len(proposal["reason"].strip()) <= 512
-    ):
-        raise ValueError("proposal must contain only restart/stop action and a short reason")
-    if proposal["action"] == "restart" and (
-        not observation.failed or observation.attempt >= observation.max_restarts
-    ):
-        raise ValueError("restart violates supervisor state or hard restart budget")
-    return Decision(proposal["action"], proposal["reason"].strip())
 
 
 class CommandAgentRuntime:
@@ -75,17 +55,3 @@ class CommandAgentRuntime:
                 except ProcessLookupError:
                     pass
                 process.wait()
-
-
-class GuardedAgentController:
-    def __init__(self, runtime):
-        self.runtime = runtime
-        self.last_error = None
-
-    def decide(self, observation):
-        self.last_error = None
-        try:
-            return guard_decision(self.runtime.propose(observation), observation)
-        except Exception as error:
-            self.last_error = f"{type(error).__name__}: {error}"[:512]
-            return Decision("stop", "agent proposal rejected; stop safely")

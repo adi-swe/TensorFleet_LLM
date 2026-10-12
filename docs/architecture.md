@@ -12,11 +12,12 @@ flowchart TB
     CLI["CLI: train / simulate / validate / benchmark"]
     RESOLVE["Device resolution and configuration validation<br/>auto: CUDA → MPS → CPU"]
 
-    subgraph ORCH["Orchestration"]
-        SUP["Supervisor<br/>spawn, monitor, reap, bounded restart"]
+    subgraph ORCH["controller: policies, safety and execution"]
+        SUP["controller/executor.py<br/>spawn, monitor, reap, bounded restart"]
         CTRL["RestartController or GuardedAgentController"]
         GUARD["Supervisor proposal guard<br/>restart or stop; hard budget"]
-        ADAPTER["Optional trusted command agent<br/>JSON proposals; finite timeout"]
+        ADAPTER["agent_runtime.py: trusted command adapter<br/>JSON proposals; finite timeout"]
+        SEARCH["candidate_search.py<br/>offline checkpoint-cadence ranking"]
         SUP -->|"failure observation"| CTRL
         CTRL -->|"proposal"| GUARD
         GUARD -->|"validated decision"| SUP
@@ -24,8 +25,8 @@ flowchart TB
         ADAPTER -.->|"response"| CTRL
     end
 
-    subgraph EXEC["Training executor: real work"]
-        WORKER["Supervised worker process"]
+    subgraph EXEC["training: executor, checkpoints and profiling"]
+        WORKER["ddp_executor.py: supervised worker"]
         MODEL["TinyTransformer + AdamW<br/>synthetic or shuffled stateful data"]
         GROUP["WorkerGroup"]
         CPU["Multiple CPU workers<br/>PyTorch DDP / Gloo"]
@@ -44,13 +45,17 @@ flowchart TB
     end
 
     subgraph SIM["Simulation and validation: separate from executor"]
-        PROFILE["Measured profile loader"]
-        ENGINE["Discrete-event simulator<br/>steps, checkpoints, rollback, lifecycle costs"]
+        PROFILE["simulator/calibration.py<br/>measured profiles and prediction setup"]
+        ENGINE["simulator/engine.py<br/>compose event and cost models"]
+        QUEUE["event_queue.py<br/>stable time-ordered events"]
+        COSTS["compute_model.py / communication_model.py<br/>checkpoint_model.py"]
         CAPACITY["Shared-capacity FIFO model<br/>uncalibrated service slots"]
         PRED[("Simulated results and event traces")]
-        VALIDATE["Held-out validation<br/>loop and total-runtime prediction errors"]
-        CAMPAIGN["Benchmark campaign<br/>real calibration and held-out runs"]
+        VALIDATE["experiments/evaluate.py<br/>held-out loop and total-runtime errors"]
+        CAMPAIGN["experiments/runner.py<br/>real calibration and held-out scenarios"]
         PROFILE --> ENGINE
+        ENGINE --> QUEUE
+        ENGINE --> COSTS
         PROFILE --> CAPACITY
         ENGINE --> PRED
         CAPACITY --> PRED
@@ -69,18 +74,44 @@ flowchart TB
     OBS --> PROFILE
     OBS -->|"held-out measurements"| VALIDATE
     CLI -->|"simulate / simulate-contention"| PROFILE
+    CLI -->|"search-candidates"| SEARCH
+    SEARCH -->|"simulate explicit candidates; never apply"| PROFILE
     CLI -->|"validate-simulation"| VALIDATE
     CLI -->|"benchmark-simulation"| CAMPAIGN
     CAMPAIGN -->|"launch real CPU calibration and held-out runs"| SUP
 ```
 
 Solid arrows show implemented control or data flow; dashed arrows show the optional
-agent adapter exchange. Simulated results are not currently fed into live control
-decisions. The agent adapter is implemented; the example does not call an LLM.
+agent adapter exchange. Candidate search ranks simulated checkpoint cadences offline. Simulated results
+are not currently fed into live control decisions. The agent adapter is implemented; the example does not call an LLM.
 
 Training, simulation, orchestration and agent adapters remain separate. PyTorch
 DDP performs gradient synchronization. The simulator never launches training;
 the benchmark command explicitly launches real runs before computing predictions.
+
+## Module ownership
+
+The package lives under `src/tensorfleet`; repository-level `tests/` stays outside
+the installed distribution. [ADR-0002](adr/0002-modular-package-boundaries.md)
+records the module reorganization.
+
+- `training/ddp_executor.py` runs model updates; `checkpoint.py` persists state;
+  `profiler.py` collects real metrics. Data/model/device/group helpers remain here.
+- `controller/observations.py` holds immutable contracts; `policies.py` supplies
+  rules and guarded agents; `safety_validator.py` validates proposals;
+  `executor.py` owns process lifecycle. `candidate_search.py` ranks checkpoint
+  cadences offline; `agent_runtime.py` owns the external command adapter.
+- `simulator/engine.py` composes `event_queue.py`, `compute_model.py`,
+  `communication_model.py` and `checkpoint_model.py`. `calibration.py` loads
+  measured costs and configures predictions. `contention.py` retains FIFO capacity
+  scenarios and shares the event queue.
+- `experiments/runner.py` launches real campaigns; `failure_scenarios.py` builds
+  reproducible failure/straggler configurations; `evaluate.py` scores held-out runs.
+
+The simulator and offline candidate search do not import PyTorch, the training
+executor, or experiment runners. Existing CLI commands and persisted file schemas
+are retained; pre-1.0 Python imports under `executor`, `orchestration`, and the old
+simulator `profile`/`validation` modules have moved to the owners above.
 
 ## Executor and stochastic recovery
 
@@ -176,6 +207,16 @@ step metrics. Attempts containing rolled-back work retain their own files.
 
 ## Discrete events and contention
 
+`EventQueue` orders equal-time events by insertion order and rejects events in
+its simulated past. `ComputeModel` cycles measured work durations and applies
+explicit slowdown/straggler assumptions. `CommunicationModel` defaults to zero
+additional cost because current measured DDP profiles already include communication.
+Explicit separate communication samples require `durations_include_communication=False`
+and truly isolated compute samples supplied by the caller. The executor does not
+currently produce isolated compute/communication profiles, and no network
+bandwidth/topology extrapolation is implied. `CheckpointModel` owns cadence,
+write/restart cost and committed progress.
+
 The event engine schedules step start/completion, checkpoint completion, failure
 and restart. Checkpoint progress commits only when its modeled write completes.
 Explicit checkpoint, overhead, startup, teardown and restart costs contribute to
@@ -191,6 +232,11 @@ DDP durations include communication and are only a coarse proxy for service
 demand. The capacity model is unit-tested but has not been calibrated against
 actual overlapping jobs or CPU stress. Injected sleep delays validate a controlled
 straggler scenario, not a general CPU contention model.
+
+Offline checkpoint-candidate search evaluates at most 128 explicit cadences with
+a fixed profile/configuration and optional failure step. It returns predictions
+sorted by total simulated time with cadence as a deterministic tie-breaker. It
+does not mutate profiles, change live training or expand guarded controller actions.
 
 ## Accuracy validation
 
@@ -256,3 +302,55 @@ ADRs when a decision changes.
   The latest runtime verification remains 41 tests passed and one CUDA test skipped,
   with successful MPS failure recovery and passing lint. Documentation-only work
   since that verification passed link, Mermaid and whitespace checks.
+
+- **2026-10-12 — Restructure step 1:** moved numerical execution into `training`,
+  process supervision and policy contracts into `controller`, and campaign/evaluation
+  into `experiments`. Extracted real metric collection into `training/profiler.py`
+  and reusable experiment scenario builders. Updated imports and diagram ownership;
+  execution, checkpoint and CLI behavior remain unchanged. Verification: 33 unit
+  tests passed and lint passed after the moves.
+
+- **2026-10-12 — Restructure step 2:** extracted the stable event queue, profiled
+  work/communication contracts and checkpoint cost/progress model. Consolidated
+  profile loading/prediction in `simulator/calibration.py`; added bounded offline
+  checkpoint-candidate search and its CLI. Updated the Mermaid flow and ADR-0002.
+  Existing unit tests still pass; dedicated cost-model and integration verification
+  follows this completed decomposition.
+
+- **2026-10-12 — Restructure step 3 verification:** reviewed the final module
+  boundaries, canonical diagram and ADR-0002; the step 2 architecture remains
+  accurate. Added regression coverage for event ordering, cost composition,
+  checkpoint rollback, bounded candidate ranking, import isolation and the search
+  CLI. Full suite: 48 passed, one two-GPU CUDA test skipped on this Mac. Ruff lint
+  and formatting passed. Built a wheel and verified new modules are packaged and
+  obsolete modules are absent. Exercised simulation, contention, candidate search
+  and validation CLI commands. A fresh 100-step CPU/Gloo calibration campaign with
+  three held-out runs passed the 25% per-case error gate: mean loop error 13.6%,
+  mean total-runtime error 7.5%. These are single-campaign validation observations,
+  not general accuracy guarantees. A pre-refactor stochastic MPS checkpoint resumed
+  from step 10 through step 12. Mermaid parsing, all 36 local documentation
+  links/anchors and `git diff --check` passed. Updated README layout and migration
+  guidance; checkpoint and metrics schemas remain unchanged.
+
+- **2026-10-12 — Redundant-file cleanup:** consolidated overlapping GitHub Actions
+  workflows into `tests.yml`, preserving Linux Python 3.11/3.12 and macOS Python
+  3.12 coverage, dependency installation, lint, tests, compilation and whitespace
+  checks. Removed generated build copies, local test/lint/bytecode caches, the
+  bytecode-only `src/tensorfleet_sim` remnant and empty research/configuration
+  directories. Retained the documented literature validator and recorded training
+  artifacts. Reviewed both accepted ADRs and the canonical diagram; runtime
+  architecture and decisions remain unchanged. Verification: 48 tests passed,
+  one CUDA test skipped; lint, formatting, workflow YAML/matrix checks and
+  `git diff --check` passed. The consolidated workflow has not run on GitHub yet.
+
+- **2026-10-12 — CI dependency and release checks:** investigated the failed
+  GitHub run and declared NumPy as a runtime dependency because PyTorch object
+  collectives use it during checkpoint-state exchange. The single CI workflow now
+  covers Linux Python 3.10/3.11/3.12 and macOS Python 3.12, uses Linux CPU wheels,
+  checks formatting, installs and smoke-tests the built wheel, and uploads JUnit
+  reports. Added bounded job duration, cancellation of superseded runs and pip
+  caching keyed to project metadata. Reviewed ADR-0001, ADR-0002 and the canonical
+  diagram; runtime architecture remains unchanged. Local verification after a
+  fresh editable dependency installation: 48 passed, one CUDA test skipped; lint,
+  formatting, workflow YAML/matrix and whitespace checks passed. GitHub execution
+  will validate the cross-platform matrix before merging.

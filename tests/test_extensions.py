@@ -12,20 +12,18 @@ import torch
 import torch.distributed as dist
 
 from tensorfleet.config import TrainingConfig
-from tensorfleet.executor.checkpoint import load_checkpoint
-from tensorfleet.executor.data import StatefulTokenStream, capture_state, restore_state
-from tensorfleet.executor.device import validate_hardware, worker_device
-from tensorfleet.orchestration.agents import (
-    CommandAgentRuntime,
-    GuardedAgentController,
-    guard_decision,
-)
-from tensorfleet.orchestration.interfaces import Decision, Observation
-from tensorfleet.orchestration.supervisor import run_training
+from tensorfleet.controller.agent_runtime import CommandAgentRuntime
+from tensorfleet.controller.executor import run_training
+from tensorfleet.controller.observations import Decision, Observation
+from tensorfleet.controller.policies import GuardedAgentController
+from tensorfleet.controller.safety_validator import guard_decision
+from tensorfleet.experiments.evaluate import validate_profile
+from tensorfleet.simulator.calibration import load_timing_profile
 from tensorfleet.simulator.contention import simulate_shared_capacity
 from tensorfleet.simulator.engine import simulate
-from tensorfleet.simulator.profile import load_timing_profile
-from tensorfleet.simulator.validation import validate_profile
+from tensorfleet.training.checkpoint import load_checkpoint
+from tensorfleet.training.data import StatefulTokenStream, capture_state, restore_state
+from tensorfleet.training.device import validate_hardware, worker_device
 
 
 def assert_state_equal(left, right):

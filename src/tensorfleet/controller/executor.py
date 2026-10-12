@@ -10,10 +10,11 @@ from pathlib import Path
 
 import psutil
 
-from tensorfleet.executor.device import backend_name, validate_hardware
-from tensorfleet.executor.worker import train_worker
-from tensorfleet.orchestration.agents import guard_decision
-from tensorfleet.orchestration.interfaces import Observation, RestartController
+from tensorfleet.controller.observations import Observation
+from tensorfleet.controller.policies import RestartController
+from tensorfleet.controller.safety_validator import guard_decision
+from tensorfleet.training.ddp_executor import train_worker
+from tensorfleet.training.device import backend_name, validate_hardware
 
 
 def run_training(config, output, controller=None):
@@ -99,7 +100,7 @@ def run_training(config, output, controller=None):
                         decision = guard_decision(controller.decide(observation), observation)
                         error = getattr(controller, "last_error", None)
                     except Exception as rejected:
-                        from tensorfleet.orchestration.interfaces import Decision
+                        from tensorfleet.controller.observations import Decision
 
                         decision = Decision("stop", "controller decision rejected")
                         error = f"{type(rejected).__name__}: {rejected}"[:512]

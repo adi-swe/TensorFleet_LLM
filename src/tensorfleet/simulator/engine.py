@@ -1,10 +1,12 @@
-"""Discrete events replay profiled group durations; no training is executed."""
+"""Compose event and cost models; no real training is launched here."""
 
-import heapq
-import json
 import math
 from dataclasses import asdict, dataclass
-from pathlib import Path
+
+from tensorfleet.simulator.checkpoint_model import CheckpointModel
+from tensorfleet.simulator.communication_model import CommunicationModel
+from tensorfleet.simulator.compute_model import ComputeModel
+from tensorfleet.simulator.event_queue import EventQueue
 
 
 @dataclass(frozen=True)
@@ -17,24 +19,6 @@ class SimulationResult:
 
     def to_dict(self):
         return asdict(self)
-
-
-def load_profile(directory):
-    # Later successful attempts replace rolled-back measurements at the same step.
-    by_step = {}
-    paths = sorted(
-        Path(directory).glob("metrics-attempt-*.jsonl"),
-        key=lambda path: int(path.stem.rsplit("-", 1)[1]),
-    )
-    for path in paths:
-        for line in path.read_text().splitlines():
-            record = json.loads(line)
-            if record["kind"] != "measured":
-                raise ValueError("profile must contain measured training records")
-            by_step[record["step"]] = record["step_seconds"]
-    if not by_step:
-        raise ValueError("no measured step durations found")
-    return [by_step[step] for step in sorted(by_step)]
 
 
 def simulate(
@@ -51,71 +35,61 @@ def simulate(
     worker_delay_seconds=0.0,
     delay_start=0,
     delay_stop=None,
+    *,
+    communication_durations=None,
+    durations_include_communication=True,
 ):
-    durations = list(durations)
-    if not durations or any(not math.isfinite(d) or d <= 0 for d in durations):
-        raise ValueError("profile durations must be finite and positive")
-    if (
-        type(steps) is not int
-        or steps <= 0
-        or type(checkpoint_every) is not int
-        or checkpoint_every <= 0
-        or not math.isfinite(restart_seconds)
-        or restart_seconds < 0
-    ):
-        raise ValueError("invalid simulation configuration")
+    work = ComputeModel(
+        tuple(durations),
+        contention_factor,
+        worker_delay_seconds,
+        delay_start,
+        delay_stop,
+        durations_include_communication,
+    )
+    communication = CommunicationModel(
+        () if communication_durations is None else tuple(communication_durations)
+    )
+    communication.validate_profile(work.includes_communication)
+    checkpoint = CheckpointModel(checkpoint_every, checkpoint_seconds, restart_seconds)
+    if type(steps) is not int or steps <= 0:
+        raise ValueError("steps must be a positive integer")
     if fail_step is not None and (type(fail_step) is not int or not 0 <= fail_step < steps):
         raise ValueError("failure step outside simulation")
-    for value in (
-        checkpoint_seconds,
-        overhead_seconds,
-        startup_seconds,
-        teardown_seconds,
-        worker_delay_seconds,
+    if any(
+        not math.isfinite(v) or v < 0 for v in (overhead_seconds, startup_seconds, teardown_seconds)
     ):
-        if not math.isfinite(value) or value < 0:
-            raise ValueError("costs and delays must be finite and nonnegative")
-    if not math.isfinite(contention_factor) or contention_factor < 1:
-        raise ValueError("contention factor must be finite and at least one")
-    if delay_start < 0 or (delay_stop is not None and delay_stop <= delay_start):
-        raise ValueError("invalid delay interval")
-    queue = [(startup_seconds, "start", 0)]
+        raise ValueError("costs must be finite and nonnegative")
+    queue = EventQueue()
+    queue.schedule(startup_seconds, "start", 0)
     events = []
-    committed = 0
     replayed = 0
     injected = False
     while queue:
-        now, event, step = heapq.heappop(queue)
+        item = queue.pop()
+        now, event, step = item.time, item.kind, item.step
         events.append({"time": now, "event": event, "step": step})
         if event in ("start", "restart"):
             if step == fail_step and not injected:
                 injected = True
-                replayed += step - committed
+                replayed += checkpoint.lost_steps(step)
                 events.append({"time": now, "event": "failure", "step": step})
-                heapq.heappush(queue, (now + restart_seconds, "restart", committed))
+                queue.schedule(
+                    now + checkpoint.restart_seconds, "restart", checkpoint.committed_step
+                )
             else:
-                heapq.heappush(
-                    queue,
-                    (
-                        now
-                        + durations[step % len(durations)] * contention_factor
-                        + overhead_seconds
-                        + (
-                            worker_delay_seconds
-                            if step >= delay_start and (delay_stop is None or step < delay_stop)
-                            else 0.0
-                        ),
-                        "complete",
-                        step,
-                    ),
+                queue.schedule(
+                    now + work.duration(step) + communication.duration(step) + overhead_seconds,
+                    "complete",
+                    step,
                 )
         elif event == "complete":
-            if (step + 1) % checkpoint_every == 0 or step + 1 == steps:
-                heapq.heappush(queue, (now + checkpoint_seconds, "checkpoint", step + 1))
+            if checkpoint.due(step + 1, steps):
+                queue.schedule(now + checkpoint.write_seconds, "checkpoint", step + 1)
             elif step + 1 < steps:
-                heapq.heappush(queue, (now, "start", step + 1))
-        if event == "checkpoint":
-            committed = step
+                queue.schedule(now, "start", step + 1)
+        elif event == "checkpoint":
+            checkpoint.commit(step)
             if step < steps:
-                heapq.heappush(queue, (now, "start", step))
-    return SimulationResult("simulated", now + teardown_seconds, steps, replayed, events)
+                queue.schedule(now, "start", step)
+    return SimulationResult("simulated", queue.now + teardown_seconds, steps, replayed, events)

@@ -5,9 +5,10 @@ explicit approximation: profiles include communication and are not pure CPU
 service demand. Slots are abstract capacity, not calibrated physical CPU cores.
 """
 
-import heapq
 import math
 from collections import deque
+
+from tensorfleet.simulator.event_queue import EventQueue
 
 
 def simulate_shared_capacity(durations, jobs, world_size=2, slots=2):
@@ -23,7 +24,7 @@ def simulate_shared_capacity(durations, jobs, world_size=2, slots=2):
     ):
         raise ValueError("positive profile, job steps, worker count and slots required")
     waiting = deque((job, 0, rank) for job in range(len(jobs)) for rank in range(world_size))
-    running = []
+    running = EventQueue()
     remaining = {(job, 0): world_size for job in range(len(jobs))}
     finished = {}
     now = 0.0
@@ -31,11 +32,14 @@ def simulate_shared_capacity(durations, jobs, world_size=2, slots=2):
     while waiting or running:
         while waiting and len(running) < slots:
             job, step, rank = waiting.popleft()
-            heapq.heappush(running, (now + durations[step % len(durations)], job, step, rank))
+            running.schedule(
+                now + durations[step % len(durations)], "worker-complete", step, job=job, rank=rank
+            )
             events.append(
                 {"time": now, "event": "worker-start", "job": job, "step": step, "rank": rank}
             )
-        now, job, step, rank = heapq.heappop(running)
+        completed = running.pop()
+        now, job, step, rank = completed.time, completed.job, completed.step, completed.rank
         events.append(
             {"time": now, "event": "worker-complete", "job": job, "step": step, "rank": rank}
         )

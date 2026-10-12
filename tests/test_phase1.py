@@ -6,11 +6,13 @@ import pytest
 import torch
 
 from tensorfleet.config import TrainingConfig
-from tensorfleet.executor.checkpoint import atomic_save, load_checkpoint
-from tensorfleet.executor.model import TinyTransformer, synthetic_batch
-from tensorfleet.orchestration.interfaces import Observation, RestartController
-from tensorfleet.orchestration.supervisor import run_training
-from tensorfleet.simulator.engine import load_profile, simulate
+from tensorfleet.controller.executor import run_training
+from tensorfleet.controller.observations import Observation
+from tensorfleet.controller.policies import RestartController
+from tensorfleet.simulator.calibration import load_profile
+from tensorfleet.simulator.engine import simulate
+from tensorfleet.training.checkpoint import atomic_save, load_checkpoint
+from tensorfleet.training.model import TinyTransformer, synthetic_batch
 
 
 def test_config_and_synthetic_batch():

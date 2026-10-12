@@ -7,6 +7,8 @@ and operational contracts live in [the architecture document](../architecture.md
 
 - [ADR-0001: Platform-aware training with separate simulation and guarded orchestration](0001-platform-aware-training-architecture.md) — Accepted, 2026-10-12.
 
+- [ADR-0002: Separate training, simulator, controller and experiment modules](0002-modular-package-boundaries.md) — Accepted, 2026-10-12.
+
 ## Record and maintenance convention
 
 Use `NNNN-short-decision-title.md` with the next available number. Each record

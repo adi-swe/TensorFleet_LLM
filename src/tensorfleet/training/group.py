@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-from tensorfleet.executor.device import backend_name
+from tensorfleet.training.device import backend_name
 
 
 class WorkerGroup:

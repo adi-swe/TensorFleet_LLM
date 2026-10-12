@@ -1,9 +1,11 @@
-"""Measured cost profiles from complete, successful single-attempt runs."""
+"""Load measured profiles and configure cost-model predictions without launching training."""
 
 import json
 import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from tensorfleet.simulator.engine import simulate
 
 
 @dataclass(frozen=True)
@@ -57,4 +59,51 @@ def load_timing_profile(directory):
         statistics.mean(costs),
         startup,
         max(0.0, events[0]["elapsed_seconds"] - startup - loop),
+    )
+
+
+def load_profile(directory):
+    # Later successful attempts replace rolled-back measurements at the same step.
+    by_step = {}
+    paths = sorted(
+        Path(directory).glob("metrics-attempt-*.jsonl"),
+        key=lambda path: int(path.stem.rsplit("-", 1)[1]),
+    )
+    for path in paths:
+        for line in path.read_text().splitlines():
+            record = json.loads(line)
+            if record["kind"] != "measured":
+                raise ValueError("profile must contain measured training records")
+            by_step[record["step"]] = record["step_seconds"]
+    if not by_step:
+        raise ValueError("no measured step durations found")
+    return [by_step[step] for step in sorted(by_step)]
+
+
+def predict(
+    profile, config, *, contention_factor=1.0, restart_seconds=None, checkpoint_seconds=None
+):
+    if profile.config.get("straggler_seconds", 0) > 0:
+        raise ValueError("use an uncontended profile to avoid double-counting delays")
+    # The overhead mean is independent of checkpoint cadence; checkpoint cost is explicit.
+    return simulate(
+        profile.step_seconds,
+        config["steps"],
+        config["checkpoint_every"],
+        config.get("fail_step"),
+        restart_seconds=(
+            profile.startup_seconds + profile.teardown_seconds
+            if restart_seconds is None
+            else restart_seconds
+        ),
+        checkpoint_seconds=(
+            profile.checkpoint_seconds if checkpoint_seconds is None else checkpoint_seconds
+        ),
+        overhead_seconds=statistics.mean(profile.overhead_seconds),
+        startup_seconds=profile.startup_seconds,
+        teardown_seconds=profile.teardown_seconds,
+        contention_factor=contention_factor,
+        worker_delay_seconds=config.get("straggler_seconds", 0.0),
+        delay_start=config.get("straggler_start", 0),
+        delay_stop=config.get("straggler_stop"),
     )
