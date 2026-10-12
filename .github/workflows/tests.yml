@@ -9,6 +9,8 @@ jobs:
   phase1:
     name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +41,8 @@ jobs:
           python -m ruff check src tests examples
           python -m ruff format --check src tests examples
       - name: Run unit and real-worker integration tests
-        run: python -m pytest -q -ra --junitxml=test-results.xml
+        timeout-minutes: 8
+        run: python -m pytest -vv -ra -o faulthandler_timeout=60 --junitxml=test-results.xml
       - name: Compile Python sources
         run: python -m compileall -q src
       - name: Build and install wheel

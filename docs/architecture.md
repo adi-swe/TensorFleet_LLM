@@ -361,3 +361,9 @@ ADRs when a decision changes.
   verified each release's action metadata and the inputs used by this workflow.
   Reviewed the canonical diagram and both ADRs; architecture remains unchanged.
   The updated workflow will run the full matrix again before merge.
+
+- **2026-10-12 — Hosted-runner test diagnostics:** Linux passes the updated action
+  matrix, while hosted macOS testing takes substantially longer than local tests.
+  Enabled unbuffered per-test progress, 60-second diagnostic stack dumps and an
+  eight-minute test-step limit to make stalls actionable. No test is excluded and
+  no failure is ignored. Reviewed the diagram and ADRs; architecture is unchanged.
