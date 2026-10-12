@@ -374,3 +374,10 @@ ADRs when a decision changes.
   traffic, requested the latest Python patch release, and exposed worker output.
   These are CI environment changes; the precise cause of the stall is not yet
   established. The diagram and accepted ADRs remain accurate and unchanged.
+
+- **2026-10-12 — macOS CI interpreter selection:** hosted Python 3.12 continued
+  stalling during process supervision with explicit loopback networking. Select
+  Python 3.13 for macOS CI to match the locally verified interpreter; Linux retains
+  Python 3.10/3.11/3.12 coverage. Document the unresolved hosted macOS 3.12 limitation
+  rather than claim that its runtime was fixed. Full macOS tests remain enabled.
+  Reviewed both ADRs and the diagram; runtime architecture is unchanged.
