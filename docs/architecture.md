@@ -354,3 +354,10 @@ ADRs when a decision changes.
   fresh editable dependency installation: 48 passed, one CUDA test skipped; lint,
   formatting, workflow YAML/matrix and whitespace checks passed. GitHub execution
   will validate the cross-platform matrix before merging.
+
+- **2026-10-12 — CI action runtime update:** the first GitHub run passed all three
+  Linux lanes but reported deprecated Node 20 action runtimes. Updated checkout,
+  Python setup and artifact upload to explicit released versions using Node 24;
+  verified each release's action metadata and the inputs used by this workflow.
+  Reviewed the canonical diagram and both ADRs; architecture remains unchanged.
+  The updated workflow will run the full matrix again before merge.
