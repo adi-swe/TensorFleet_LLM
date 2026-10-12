@@ -367,3 +367,10 @@ ADRs when a decision changes.
   Enabled unbuffered per-test progress, 60-second diagnostic stack dumps and an
   eight-minute test-step limit to make stalls actionable. No test is excluded and
   no failure is ignored. Reviewed the diagram and ADRs; architecture is unchanged.
+
+- **2026-10-12 — Hosted Gloo environment:** diagnostic logs located the macOS
+  stall at the first distributed recovery test after successful unit tests.
+  Selected the platform's loopback interface explicitly for single-host CI Gloo
+  traffic, requested the latest Python patch release, and exposed worker output.
+  These are CI environment changes; the precise cause of the stall is not yet
+  established. The diagram and accepted ADRs remain accurate and unchanged.

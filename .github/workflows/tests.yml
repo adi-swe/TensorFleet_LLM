@@ -29,6 +29,7 @@ jobs:
         uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+          check-latest: true
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install CPU PyTorch on Linux runners
@@ -40,9 +41,17 @@ jobs:
         run: |
           python -m ruff check src tests examples
           python -m ruff format --check src tests examples
+      - name: Select loopback for single-host Gloo tests
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo "GLOO_SOCKET_IFNAME=lo0" >> "$GITHUB_ENV"
+          else
+            echo "GLOO_SOCKET_IFNAME=lo" >> "$GITHUB_ENV"
+          fi
       - name: Run unit and real-worker integration tests
         timeout-minutes: 8
-        run: python -m pytest -vv -ra -o faulthandler_timeout=60 --junitxml=test-results.xml
+        run: python -m pytest -vv -s -ra -o faulthandler_timeout=60 --junitxml=test-results.xml
       - name: Compile Python sources
         run: python -m compileall -q src
       - name: Build and install wheel
