@@ -298,8 +298,8 @@ the built wheel to smoke-test both CLI entry points outside the source tree.
 Linux runners use CPU PyTorch wheels; GPU tests skip when their hardware is
 unavailable. NumPy is a runtime dependency for PyTorch's checkpoint-state object
 collectives. JUnit test reports are retained as workflow artifacts.
-The hosted macOS Python 3.12 lane stalled during process supervision; its cause
-remains unresolved. Use Python 3.13 for the tested macOS setup.
+CI explicitly selects loopback networking for single-host Gloo tests to avoid
+hosted-runner interface auto-selection. Use Python 3.13 for the tested macOS setup.
 
 ## Literature evidence registry
 

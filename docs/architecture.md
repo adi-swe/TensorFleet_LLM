@@ -381,3 +381,19 @@ ADRs when a decision changes.
   Python 3.10/3.11/3.12 coverage. Document the unresolved hosted macOS 3.12 limitation
   rather than claim that its runtime was fixed. Full macOS tests remain enabled.
   Reviewed both ADRs and the diagram; runtime architecture is unchanged.
+
+- **2026-10-12 — Hosted-runner evidence correction:** logs retrieved after the
+  loopback-configured Python 3.12 rerun was cancelled show that both distributed
+  stochastic recovery cases passed. The preceding entry's inference of continued
+  stalling was premature; these observations do not establish a Python 3.12
+  incompatibility. Removed that claim from README. Keep macOS CI on Python 3.13
+  to match the local setup, with full Linux Python 3.10/3.11/3.12 coverage.
+  Architecture and the accepted ADRs remain unchanged.
+
+- **2026-10-12 — Cross-platform CI verified:** [GitHub run 38314630981](https://github.com/adi-swe/TensorFleet_LLM/actions/runs/38314630981)
+  passed all four jobs. macOS Python 3.13 passed 48 tests, including MPS recovery,
+  with one CUDA skip. Linux Python 3.10/3.11/3.12 each passed 47 tests with two
+  hardware-dependent skips. Every lane passed lint, formatting, wheel installation
+  and both CLI smoke tests. Source and workflow are unchanged since this successful
+  run; final edits only correct the hosted-runner evidence and record verification.
+  Reviewed the Mermaid diagram and both ADRs; architecture remains unchanged.
