@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tensorfleet-llm"
+version = "0.1.0"
+description = "Simulation-guided distributed training orchestration"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.8,<3", "psutil>=5.9"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.9"]
+
+[project.scripts]
+tensorfleet = "tensorfleet.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+markers = ["integration: launches real distributed workers", "cuda: requires CUDA GPUs and NCCL", "mps: requires an Apple MPS GPU"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

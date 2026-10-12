@@ -1,0 +1,15 @@
+---
+description: Keep TensorFleet architecture decisions and Mermaid diagram current after every implementation step.
+alwaysApply: true
+---
+
+# Architecture documentation maintenance
+
+Follow the architecture documentation workflow in `AGENTS.md` after every meaningful
+implementation step. Update the canonical Mermaid diagram and contracts in
+`docs/architecture.md`, review the ADR index in `docs/adr/README.md`, and record the
+review in the architecture maintenance log before moving to the next step.
+
+When behavior changes an architectural decision, add a new numbered ADR and link
+any superseded decision. Preserve accepted history. When architecture is unchanged,
+record that explicitly; avoid cosmetic diagram changes.

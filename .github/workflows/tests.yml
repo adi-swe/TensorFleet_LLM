@@ -1,0 +1,16 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  phase1:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m ruff check src tests examples
+      - run: python -m pytest -q

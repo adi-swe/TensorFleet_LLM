@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Iterable
 from urllib.parse import urlparse
 
-
 _REQUIRED_FIELDS = (
     "citation",
     "title",
